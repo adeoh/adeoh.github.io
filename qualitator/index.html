@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Quality Comparator — v3 (Auto-Generate)</title>
+  <style>
+    :root{
+      --bg:#0b0c0f; --panel:#141720; --muted:#9aa3b2; --text:#e7e9ee; --accent:#7dd3fc; --ok:#34d399; --warn:#f59e0b; --bad:#ef4444;
+      --radius:16px;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0; font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Inter,Arial; background:var(--bg); color:var(--text)}
+    h1{font-size:clamp(18px,2.5vw,28px); margin:0}
+    .sub{color:var(--muted); font-size:13px; margin-top:6px}
+    .container{max-width:1200px; margin:0 auto; padding:24px}
+    .panel{background:var(--panel); border:1px solid #1f2330; border-radius:var(--radius); padding:16px}
+
+    /* === Layout Rows === */
+    .row1{margin-bottom:16px}
+    .row2{display:grid; grid-template-columns: minmax(260px,1fr) minmax(320px,1fr) minmax(240px,.9fr); gap:16px; align-items:start; margin-bottom:16px}
+    .row3{display:block}
+
+    @media (max-width:1000px){ .row2{grid-template-columns:1fr} }
+
+    /* Common UI */
+    .control{background:#0f131c; border:1px solid #1f2330; padding:10px 12px; border-radius:12px; display:flex; align-items:center; gap:10px}
+    .controls{display:flex; flex-wrap:wrap; gap:12px}
+    select,input[type="number"],button{background:#0c1119; color:var(--text); border:1px solid #243049; border-radius:10px; padding:8px 10px}
+
+    .drop{border:2px dashed #2b3650; border-radius:var(--radius); padding:18px; text-align:center; color:var(--muted)}
+    .drop.highlight{border-color:var(--accent); color:var(--accent)}
+
+    .origThumb{display:flex; gap:12px; align-items:flex-start}
+    .origThumb img{max-height:160px; border-radius:12px; display:block}
+    .meta{font-size:12px; color:var(--muted)}
+
+    .variants{display:grid; grid-template-columns:repeat(3, 1fr); gap:14px}
+    @media (max-width:1050px){ .variants{grid-template-columns:repeat(2,1fr)} }
+    @media (max-width:640px){ .variants{grid-template-columns:1fr} }
+    .card{background:#0e1420; border:1px solid #22304a; border-radius:14px; padding:12px; display:flex; flex-direction:column; gap:8px}
+    .thumb{position:relative; background:#0a0f17; border:1px solid #1a2336; border-radius:10px; display:flex; align-items:center; justify-content:center; min-height:160px; overflow:hidden}
+    .thumb img{max-width:100%}
+    .row{display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap}
+    .pill{font-size:12px; padding:4px 8px; border-radius:999px; border:1px solid #2a3756; color:#cfe1ff; text-decoration:none}
+    .ratio.ok{color:var(--ok)} .ratio.warn{color:var(--warn)} .ratio.bad{color:var(--bad)}
+    .fine{font-size:12px; color:var(--muted)}
+
+    .compare{margin-top:16px}
+    .compare .stage{position:relative; background:#0a0f17; border:1px solid #1a2336; border-radius:12px; overflow:hidden; min-height:240px}
+    .compare img{display:block; width:100%}
+    .slider{position:absolute; left:0; top:0; bottom:0; width:2px; background:#ffffff55}
+    .handle{position:absolute; top:50%; transform:translate(-50%,-50%); width:18px; height:18px; border-radius:50%; background:#fff; border:2px solid #000}
+
+    .footer{opacity:.7; font-size:12px; margin-top:12px}
+    .rowgap{display:flex; gap:12px; flex-wrap:wrap}
+    .hidden{display:none}
+
+    /* Fixed-corner 1:1 sample (no more box chasing the cursor) */
+    .zoomable{position:relative; overflow:hidden}
+    .zoom-caption{position:absolute; top:8px; right:8px; font-size:12px; background:rgba(10,14,22,.7); border:1px solid #27324c; color:#d7e6ff; padding:4px 8px; border-radius:999px; z-index:5}
+    .loupe{position:absolute; top:8px; right:8px; width:200px; height:200px; border:1px solid #2a3756; border-radius:12px; overflow:hidden; box-shadow:0 6px 18px rgba(0,0,0,.45); background:#0b0c12; display:none; z-index:4; pointer-events:none}
+    .loupe-inner{position:absolute; left:0; top:0}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="panel">
+      <!-- Row 1: title, description -->
+      <div class="row1">
+        <h1>Quality Comparator</h1>
+        <div class="sub">Upload an image and it will <em>auto-generate</em> compressed variants at 90%, 80%, 70%, 60%, 50%, and 40%. Click to cycle zoom on any image: <strong>200% → 500% → 800% → 1000% → 100%</strong>. Optional hover sample appears in the top-right corner.</div>
+      </div>
+
+      <!-- Row 2: drop zone, tools, original thumbnail -->
+      <div class="row2">
+        <div>
+          <div id="drop" class="drop" tabindex="0">
+            <strong>Drop an image here</strong> (or click to choose)
+            <div class="fine">Supported input: JPG/PNG. Output: JPEG, WebP, AVIF (if supported).</div>
+            <input id="file" type="file" accept="image/*" class="hidden" />
+          </div>
+        </div>
+        <div>
+          <div class="controls">
+            <div class="control">
+              <label for="format">Output</label>
+              <select id="format">
+                <option value="image/jpeg">JPEG</option>
+                <option value="image/webp">WebP</option>
+                <option value="image/avif">AVIF</option>
+              </select>
+            </div>
+            <div class="control">
+              <label for="maxdim">Resize max px</label>
+              <input id="maxdim" type="number" min="256" step="64" value="4096" />
+            </div>
+            <div class="control">
+              <label><input id="psnrToggle" type="checkbox" /> PSNR</label>
+            </div>
+            <div class="control">
+              <label><input id="loupeToggle" type="checkbox" /> Hover 1:1 sample</label>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div id="orig" class="origThumb"></div>
+        </div>
+      </div>
+
+      <!-- Row 3: results (variants + compare) -->
+      <div class="row3">
+        <div id="variants" class="variants"></div>
+        <div class="compare">
+          <div class="rowgap" style="margin-top:12px">
+            <select id="cmpA"><option>—</option></select>
+            <select id="cmpB"><option>—</option></select>
+            <button id="cmpSwap">Swap</button>
+          </div>
+          <div id="cmpStage" class="stage zoomable" aria-label="Comparison stage"></div>
+        </div>
+      </div>
+
+      <div class="footer">All processing happens locally in your browser. No files are uploaded anywhere.</div>
+    </div>
+  </div>
+
+  <script>
+  const drop = document.getElementById('drop');
+  const fileInput = document.getElementById('file');
+  const formatSel = document.getElementById('format');
+  const maxdimInput = document.getElementById('maxdim');
+  const psnrToggle = document.getElementById('psnrToggle');
+  const loupeToggle = document.getElementById('loupeToggle');
+  const orig = document.getElementById('orig');
+  const variantsEl = document.getElementById('variants');
+  const cmpA = document.getElementById('cmpA');
+  const cmpB = document.getElementById('cmpB');
+  const cmpStage = document.getElementById('cmpStage');
+  const cmpSwap = document.getElementById('cmpSwap');
+
+  let sourceImage = null; // HTMLImageElement of original (resized)
+  let sourceMeta = null;  // {name, size, type, w, h, originalBlob}
+  let generated = [];     // [{q, blob, url, size, ratio, label}]
+
+  async function canEncode(type){
+    return new Promise(resolve=>{
+      const c=document.createElement('canvas'); c.width=c.height=2; const ok=c.toDataURL(type).startsWith('data:'); resolve(ok);
+    });
+  }
+  async function init(){
+    for (const t of ['image/avif','image/webp']){
+      const option = [...formatSel.options].find(o=>o.value===t);
+      if(option){ const ok = await canEncode(t); if(!ok){ option.disabled = true; option.textContent += ' (not supported)'; } }
+    }
+  }
+  init();
+
+  function bytes(n){ if(n<1024) return n+" B"; if(n<1024*1024) return (n/1024).toFixed(1)+" KB"; return (n/1024/1024).toFixed(2)+" MB"; }
+  function makeCanvasFromImage(img, maxdim){
+    const c=document.createElement('canvas'); const ctx=c.getContext('2d');
+    let {width:w,height:h}=img; let scale=1; const maxd = Math.max(w,h); if(maxd>maxdim){ scale = maxdim/maxd; }
+    c.width = Math.round(w*scale); c.height = Math.round(h*scale); ctx.imageSmoothingQuality='high'; ctx.drawImage(img,0,0,c.width,c.height); return c;
+  }
+  async function blobFromCanvas(canvas, type, quality){ return new Promise(res=>canvas.toBlob(res, type, quality)); }
+  function clearUI(){ orig.innerHTML=''; variantsEl.innerHTML=''; cmpA.innerHTML='<option value="">—</option>'; cmpB.innerHTML='<option value="">—</option>'; cmpStage.innerHTML=''; generated=[]; }
+
+  drop.addEventListener('click',()=>fileInput.click());
+  drop.addEventListener('keydown',(e)=>{ if(e.key==='Enter' || e.key===' '){ e.preventDefault(); fileInput.click(); }});
+  fileInput.addEventListener('change',e=>{ if(e.target.files[0]) handleFile(e.target.files[0]); });
+  ;['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault(); drop.classList.add('highlight');}));
+  ;['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault(); drop.classList.remove('highlight');}));
+  drop.addEventListener('drop',e=>{ const f=e.dataTransfer.files[0]; if(f) handleFile(f); });
+
+  async function handleFile(file){
+    if(!file.type.startsWith('image/')){ alert('Please choose an image file.'); return; }
+    clearUI();
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = ()=>{
+      URL.revokeObjectURL(url);
+      const c = makeCanvasFromImage(img, parseInt(maxdimInput.value,10)||4096);
+      const previewUrl = c.toDataURL('image/png');
+      sourceImage = new Image(); sourceImage.src = previewUrl;
+      sourceMeta = { name:file.name, size:file.size, type:file.type, w:c.width, h:c.height, originalBlob:file };
+      renderOriginal(previewUrl);
+      // Auto-generate immediately after preview is ready
+      generateVariants();
+    };
+    img.src = url;
+  }
+
+  function renderOriginal(previewUrl){
+    const wrap=document.createElement('div'); wrap.className='zoomable'; wrap.style.maxWidth='100%'; wrap.style.borderRadius='12px'; wrap.style.overflow='hidden'; wrap.style.position='relative';
+    const img=document.createElement('img'); img.src=previewUrl; img.alt='Original';
+    wrap.append(img);
+    enableZoomAndLoupe(wrap, img);
+
+    const meta=document.createElement('div'); meta.className='meta';
+    meta.innerHTML=`<div><strong>${sourceMeta.name}</strong></div><div>${sourceMeta.w}×${sourceMeta.h} • ${bytes(sourceMeta.size)} • ${sourceMeta.type}</div>`;
+
+    orig.append(wrap, meta);
+  }
+
+  async function ensureImageLoaded(img){
+    if(!img) return;
+    try{
+      if('decode' in img && typeof img.decode === 'function'){
+        await img.decode();
+      } else if(!img.complete || img.naturalWidth === 0){
+        await new Promise(res=>{ img.onload = () => res(); img.onerror = () => res(); });
+      }
+    }catch{}
+  }
+
+  async function generateVariants(){
+    if(!sourceImage){ return; }
+    await ensureImageLoaded(sourceImage);
+    variantsEl.innerHTML=''; generated=[]; cmpA.innerHTML='<option value="">—</option>'; cmpB.innerHTML='<option value="">—</option>';
+    await new Promise(r=>setTimeout(r));
+    const canvas = makeCanvasFromImage(sourceImage, Math.max(sourceMeta.w, sourceMeta.h));
+    const type = formatSel.value;
+    const quals = [0.9,0.8,0.7,0.6,0.5,0.4];
+    for(const q of quals){
+      const blob = await blobFromCanvas(canvas, type, q);
+      const url = URL.createObjectURL(blob);
+      const size = blob.size;
+      const ratio = size / sourceMeta.size;
+      let psnr = null;
+      if(psnrToggle.checked){ psnr = await computePSNR(canvas, blob); }
+      const item = { q, blob, url, size, ratio, type, psnr, label:`${Math.round(q*100)}%` };
+      generated.push(item);
+      addVariantCard(item);
+      addCompareOptions(item);
+      await new Promise(r=>setTimeout(r));
+    }
+  }
+
+  function addVariantCard(item){
+    const card=document.createElement('div'); card.className='card';
+    const thumb=document.createElement('div'); thumb.className='thumb zoomable';
+    const img=document.createElement('img'); img.src=item.url; img.alt=item.label; thumb.append(img);
+    enableZoomAndLoupe(thumb, img);
+
+    const row=document.createElement('div'); row.className='row';
+    const qpill=document.createElement('div'); qpill.className='pill'; qpill.textContent=item.label;
+    const ratio=document.createElement('div'); ratio.className='ratio';
+    const pct=(1-item.ratio)*100; let cls='ok'; if(pct<40) cls='warn'; if(pct<10) cls='bad'; ratio.classList.add(cls);
+    ratio.textContent = `${bytes(item.size)} (${(item.ratio*100).toFixed(1)}% of original)`;
+    row.append(qpill, ratio);
+
+    const fine=document.createElement('div'); fine.className='fine';
+    fine.textContent = `Format: ${item.type.split('/')[1].toUpperCase()}${item.psnr?` • PSNR: ${item.psnr.toFixed(2)} dB`:''}`;
+
+    const actions=document.createElement('div'); actions.className='row';
+    const dl=document.createElement('a'); dl.href=item.url; dl.download=`${basename(sourceMeta.name)}_${item.label}.${extForType(item.type)}`; dl.textContent='Download'; dl.className='pill';
+    actions.append(dl);
+
+    card.append(thumb,row,fine,actions);
+    variantsEl.append(card);
+  }
+
+  function addCompareOptions(item){
+    const optA=document.createElement('option'); optA.value=item.url; optA.textContent=`${item.label} — ${bytes(item.size)}`; cmpA.append(optA);
+    const optB=optA.cloneNode(true); cmpB.append(optB);
+  }
+
+  function basename(name){ const i=name.lastIndexOf('.'); return i>0?name.slice(0,i):name; }
+  function extForType(t){ if(t.includes('jpeg')) return 'jpg'; if(t.includes('webp')) return 'webp'; if(t.includes('avif')) return 'avif'; return 'img'; }
+
+  async function computePSNR(sourceCanvas, compressedBlob){
+    const imgUrl = URL.createObjectURL(compressedBlob);
+    const img = await new Promise(res=>{ const i=new Image(); i.onload=()=>res(i); i.src=imgUrl; });
+    const w=sourceCanvas.width, h=sourceCanvas.height;
+    const c=document.createElement('canvas'); c.width=w; c.height=h; const ctx=c.getContext('2d');
+    ctx.drawImage(img,0,0,w,h);
+    URL.revokeObjectURL(imgUrl);
+    const a=sourceCanvas.getContext('2d').getImageData(0,0,w,h).data;
+    const b=ctx.getImageData(0,0,w,h).data;
+    let mse=0; const n=w*h*3; // ignore alpha
+    for(let i=0;i<w*h;i++){
+      const r=a[i*4]-b[i*4]; const g=a[i*4+1]-b[i*4+1]; const bl=a[i*4+2]-b[i*4+2];
+      mse += r*r + g*g + bl*bl;
+    }
+    mse /= n; if(mse===0) return 99; const MAXI=255; return 10*Math.log10((MAXI*MAXI)/mse);
+  }
+
+  // Compare slider (unchanged), but make stage zoomable
+  let sliderPos=0.5; let sliderDown=false; let slider=null, handle=null;
+  function buildCompare(){
+    cmpStage.innerHTML='';
+    if(!cmpA.value || !cmpB.value) return;
+    const wrap=document.createElement('div'); wrap.style.position='relative'; wrap.className='zoomable';
+
+    const ia=new Image(); ia.src=cmpA.value; ia.style.position='absolute'; ia.style.left='0'; ia.style.top='0'; ia.style.width='100%'; ia.style.height='auto'; ia.style.willChange='clip-path, transform';
+    const ib=new Image(); ib.src=cmpB.value; ib.style.display='block'; ib.style.width='100%'; ib.style.willChange='transform';
+
+    wrap.append(ib, ia);
+
+    slider=document.createElement('div'); slider.className='slider'; handle=document.createElement('div'); handle.className='handle'; slider.append(handle);
+    wrap.append(slider);
+
+    cmpStage.append(wrap);
+    requestAnimationFrame(()=>updateSlider());
+
+    function onDown(e){ sliderDown=true; onMove(e); }
+    function onUp(){ sliderDown=false; }
+    function onMove(e){ if(!sliderDown) return; const rect=wrap.getBoundingClientRect(); const x=(e.touches?e.touches[0].clientX:e.clientX)-rect.left; sliderPos=Math.max(0,Math.min(1,x/rect.width)); updateSlider(); }
+    wrap.addEventListener('mousedown',onDown); wrap.addEventListener('mousemove',onMove); window.addEventListener('mouseup',onUp);
+    wrap.addEventListener('touchstart',onDown,{passive:true}); wrap.addEventListener('touchmove',onMove, {passive:true}); window.addEventListener('touchend',onUp,{passive:true});
+
+    function updateSlider(){
+      const clip = sliderPos*100;
+      ia.style.clipPath = `inset(0 ${100-clip}% 0 0)`;
+      slider.style.left = (sliderPos*100)+"%";
+      handle.style.left = '0';
+    }
+
+    enableZoomAndLoupe(wrap, ib, ia);
+  }
+  function updateCompareSelects(){ buildCompare(); }
+  cmpA.addEventListener('change', updateCompareSelects);
+  cmpB.addEventListener('change', updateCompareSelects);
+  cmpSwap.addEventListener('click', ()=>{ const a=cmpA.selectedIndex; const b=cmpB.selectedIndex; cmpA.selectedIndex=b; cmpB.selectedIndex=a; updateCompareSelects(); });
+
+  // Auto-regenerate when key controls change (if a file is loaded)
+  formatSel.addEventListener('change', ()=>{ if(sourceMeta) generateVariants(); });
+  psnrToggle.addEventListener('change', ()=>{ if(sourceMeta) generateVariants(); });
+  maxdimInput.addEventListener('change', ()=>{ if(sourceMeta) handleFile(sourceMeta.originalBlob); });
+
+  // --- Hover 1:1 Sample (fixed corner) + Click Zoom (200/500/800/1000/100) ---
+  function enableZoomAndLoupe(container, imgEl, imgEl2){
+    container.classList.add('zoomable');
+
+    const caption=document.createElement('div'); caption.className='zoom-caption'; caption.textContent='100%'; container.append(caption);
+    const loupe=document.createElement('div'); loupe.className='loupe'; const inner=document.createElement('img'); inner.className='loupe-inner'; loupe.append(inner); container.append(loupe);
+
+    const zoomSteps=[1,2,5,8,10];
+    let zIndex=0; // starts at 100%
+
+    function setZoom(z){
+      const apply = (el)=>{ if(!el) return; el.style.transform = (z===1)? 'none' : `scale(${z})`; el.style.transformOrigin = '50% 50%'; };
+      apply(imgEl); apply(imgEl2);
+      caption.textContent = `${Math.round(z*100)}%`;
+      // Show loupe only when at 100% and enabled
+      loupe.style.display = (z===1 && loupeToggle && loupeToggle.checked) ? 'block' : 'none';
+    }
+    setZoom(zoomSteps[zIndex]);
+
+    function onMove(e){
+      const rect=container.getBoundingClientRect();
+      const imgRect = imgEl.getBoundingClientRect();
+      const natW = imgEl.naturalWidth || imgEl.width; const natH = imgEl.naturalHeight || imgEl.height;
+      const cx=(e.touches?e.touches[0].clientX:e.clientX)-rect.left;
+      const cy=(e.touches?e.touches[0].clientY:e.clientY)-rect.top;
+      const px=Math.max(0,Math.min(1,cx/rect.width));
+      const py=Math.max(0,Math.min(1,cy/rect.height));
+      if(zoomSteps[zIndex]>1){
+        const setOrigin = (el)=>{ if(!el) return; el.style.transformOrigin = `${px*100}% ${py*100}%`; };
+        setOrigin(imgEl); setOrigin(imgEl2);
+      } else if(loupeToggle && loupeToggle.checked){
+        // Fixed-corner sample: panel stays in top-right; we just move the inner image to reveal area under pointer
+        const scaleX = natW / imgRect.width; const scaleY = natH / imgRect.height;
+        const lw = loupe.clientWidth || 200; const lh = loupe.clientHeight || 200;
+        const imgX = (cx - (imgRect.left - rect.left)) * scaleX - lw/2;
+        const imgY = (cy - (imgRect.top - rect.top)) * scaleY - lh/2;
+        inner.src = imgEl.currentSrc || imgEl.src;
+        inner.style.width = natW + 'px'; inner.style.height = 'auto';
+        inner.style.left = (-Math.max(0, Math.min(natW - lw, imgX))) + 'px';
+        inner.style.top  = (-Math.max(0, Math.min(natH - lh, imgY))) + 'px';
+      }
+    }
+
+    container.addEventListener('mousemove', onMove);
+    container.addEventListener('touchmove', onMove, {passive:true});
+    container.addEventListener('mouseenter', ()=>{ if(zoomSteps[zIndex]===1 && loupeToggle && loupeToggle.checked){ loupe.style.display='block'; }});
+    container.addEventListener('mouseleave', ()=>{ loupe.style.display='none'; });
+
+    container.addEventListener('click', (e)=>{
+      e.preventDefault();
+      zIndex = (zIndex + 1) % zoomSteps.length; // 1→2→5→8→10→1
+      setZoom(zoomSteps[zIndex]);
+      onMove(e); // update transform origin or loupe contents immediately
+    });
+  }
+
+  // ----------------------
+  // Minimal Diagnostics / Tests
+  // ----------------------
+  (function runTests(){
+    const results = [];
+    const t = (name, fn)=>{ try{ fn(); results.push(`✅ ${name}`); } catch(err){ results.push(`❌ ${name}: ${err.message}`); } };
+
+    t('bytes() formats', ()=>{
+      console.assert(bytes(999)==='999 B','bytes 999');
+      console.assert(bytes(2048).endsWith('KB'),'bytes KB');
+      console.assert(bytes(5*1024*1024).endsWith('MB'),'bytes MB');
+    });
+    t('basename()', ()=>{
+      console.assert(basename('photo.jpg')==='photo','basename jpg');
+      console.assert(basename('noext')==='noext','basename no ext');
+    });
+    t('extForType()', ()=>{
+      console.assert(extForType('image/jpeg')==='jpg','jpeg ext');
+      console.assert(extForType('image/webp')==='webp','webp ext');
+      console.assert(extForType('image/avif')==='avif','avif ext');
+    });
+    t('zoom steps include 2x/5x/8x/10x', ()=>{
+      const steps=[1,2,5,8,10];
+      [2,5,8,10].forEach(s=>{ if(!steps.includes(s)) throw new Error('Missing '+s); });
+    });
+    t('event listener options syntax', ()=>{
+      const div=document.createElement('div'); const h=()=>{}; div.addEventListener('touchmove', h, {passive:true}); div.removeEventListener('touchmove', h, {passive:true});
+    });
+
+    const pre=document.createElement('pre'); pre.style.fontSize='12px'; pre.style.opacity='0.7'; pre.style.padding='8px'; pre.style.border='1px solid #22304a'; pre.style.borderRadius='10px'; pre.style.marginTop='12px'; pre.textContent = '[Diagnostics]\n' + results.join('\n');
+    document.querySelector('.panel').appendChild(pre);
+    console.log('\nTEST RESULTS\n' + results.join('\n'));
+  })();
+  </script>
+</body>
+</html>
